@@ -8,14 +8,14 @@ import matplotlib.pyplot as plt
 from itertools import combinations
 
 
-st.title("Top Correlated Stocks & Commodities")
 
 # Input for ticker symbols
 tickers = st.text_area("Enter ticker symbols (comma-separated)")
 tickers = [t.strip().upper() for t in tickers.split(",") if t.strip() != ""]
 
-# Sidebar options for timeframe, correlation method, and top N pairs
+# Sidebar options for timeframe, lag, correlation method, and top N pairs
 timeframe = st.sidebar.selectbox("Timeframe", options=["1 Hour", "1 Day", "1 Month"], index=1)
+lag = st.sidebar.selectbox("Lagging Indicator", options=["1 Minute", "1 Hour", "1 Day"], index=1)
 
 if timeframe == "1 Hour":
     period = "7d"
