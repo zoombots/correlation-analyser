@@ -7,21 +7,26 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from itertools import combinations
 
-st.set_page_config(page_title="Correlation Analyzer", layout="wide")
 
-st.title("📈 Asset Correlation Analyzer")
+st.title("Top Correlated Stocks & Commodities")
 
-# --- Sidebar Inputs ---
-st.sidebar.header("Settings")
-
-tickers = st.sidebar.text_area(
-    "Enter tickers (comma separated)",
-    value="AAPL, MSFT, GOOG, AMZN, META, TSLA, NVDA, NFLX, XOM, GLD, SLV, USO, BTC-USD, ETH-USD",
-)
-
+# Input for ticker symbols
+tickers = st.text_area("Enter ticker symbols (comma-separated)")
 tickers = [t.strip().upper() for t in tickers.split(",") if t.strip() != ""]
 
-period = st.sidebar.selectbox("Data Period", options=["1y", "2y", "5y", "max"], index=1)
+# Sidebar options for timeframe, correlation method, and top N pairs
+timeframe = st.sidebar.selectbox("Timeframe", options=["1 Hour", "1 Day", "1 Month"], index=1)
+
+if timeframe == "1 Hour":
+    period = "7d"
+    interval = "1h"
+elif timeframe == "1 Day":
+    period = "1mo"
+    interval = "1d"
+elif timeframe == "1 Month":
+    period = "1y"
+    interval = "1mo"
+
 corr_method = st.sidebar.selectbox("Correlation Method", options=["pearson", "spearman"], index=0)
 top_n = st.sidebar.slider("Top N Pairs", 5, 100, 20)
 
