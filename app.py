@@ -1,65 +1,61 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import itertools
 
-# Sidebar user inputs
-tickers = st.sidebar.text_input("Enter comma-separated tickers (e.g. AAPL, MSFT, GOOGL)")
+st.title("Stock and Commodity Correlation Analyzer")
+
+tickers = st.sidebar.text_input("Enter tickers separated by commas", value="AAPL, MSFT, GOOGL, AMZN, TSLA")
 tickers = [t.strip().upper() for t in tickers.split(",") if t.strip() != ""]
 
-period = st.sidebar.selectbox("Data Period", options=["1h", "1d", "1mo"], index=1)
+period_display = st.sidebar.selectbox("Display Period", options=["1 Hour", "1 Day", "1 Month"], index=1)
+period_mapping = {"1 Hour": "7d", "1 Day": "1y", "1 Month": "5y"}
+interval_mapping = {"1 Hour": "1h", "1 Day": "1d", "1 Month": "1mo"}
+period = period_mapping[period_display]
+interval = interval_mapping[period_display]
+
+lag_display = st.sidebar.selectbox("Lagging Indicator", options=["None", "1 Minute", "1 Hour", "1 Day"], index=0)
+lag_mapping = {"None": None, "1 Minute": 1, "1 Hour": 60, "1 Day": 1440}
+lag_minutes = lag_mapping[lag_display]
+
 corr_method = st.sidebar.selectbox("Correlation Method", options=["pearson", "spearman"], index=0)
 top_n = st.sidebar.slider("Top N Pairs", 5, 100, 20)
 
-lag_option = st.sidebar.selectbox("Lagging Indicator", options=["None", "1 minute", "1 hour", "1 day"], index=0)
-lag_mapping = {"None": 0, "1 minute": 1, "1 hour": 60, "1 day": 1440}  # minutes
-lag_minutes = lag_mapping[lag_option]
+@st.cache_data(ttl=3600)
+def load_data(tickers, period, interval):
+    df = yf.download(tickers, period=period, interval=interval, group_by='ticker')
+    price_data = pd.DataFrame()
+    for ticker in tickers:
+        if (ticker, 'Adj Close') in df.columns:
+            price_data[ticker] = df[(ticker, 'Adj Close')]
+        elif 'Adj Close' in df.columns:
+            price_data = df['Adj Close']
+            break
+    return price_data.dropna()
 
-@st.cache_data
+data = load_data(tickers, period, interval)
 
-def load_data(tickers, interval):
-    data = yf.download(tickers, interval=interval, period="7d", group_by='ticker', auto_adjust=True)
-    if len(tickers) == 1:
-        data = data['Close'].to_frame(name=tickers[0])
-    else:
-        data = pd.concat([data[ticker]['Close'].rename(ticker) for ticker in tickers if ticker in data.columns.get_level_values(0)], axis=1)
-    return data.dropna()
-
-# Determine appropriate interval based on period
-interval = {
-    "1h": "1m",
-    "1d": "5m",
-    "1mo": "1h"
-}[period]
-
-data = load_data(tickers, interval)
-
-# Ensure data is not empty
-if data.empty:
-    st.error("No data loaded. Please check ticker symbols and try again.")
+if lag_minutes is not None:
+    lagged_data = data.shift(int(lag_minutes / 5))  # Assuming 5-min bars if interval is "1h"
+    combined_data = pd.concat([data, lagged_data.add_suffix("_lag")], axis=1).dropna()
 else:
-    # Apply lag shift
-    if lag_minutes > 0:
-        lag_steps = lag_minutes // {
-            "1m": 1,
-            "5m": 5,
-            "1h": 60
-        }[interval]
-        shifted_data = data.shift(lag_steps)
-        corr = data.corrwith(shifted_data, method=corr_method).to_frame(name="Correlation")
-    else:
-        corr = data.corr(method=corr_method)
+    combined_data = data
 
-    if isinstance(corr, pd.DataFrame):
-        try:
-            pairs = list(itertools.combinations(corr.index, 2))
-            correlations = [
-                (a, b, corr.loc[a, b]) for a, b in pairs if a in corr.columns and b in corr.columns
-            ]
-            top_corrs = sorted(correlations, key=lambda x: abs(x[2]), reverse=True)[:top_n]
-            df_top = pd.DataFrame(top_corrs, columns=["Ticker 1", "Ticker 2", "Correlation"])
-            st.dataframe(df_top)
-        except Exception as e:
-            st.error(f"Failed to compute correlations: {e}")
-    else:
-        st.error("Correlation matrix not generated properly. Please check your data and settings.")
+corr = combined_data.corr(method=corr_method)
+
+st.subheader("Correlation Heatmap")
+fig, ax = plt.subplots(figsize=(12, 8))
+sns.heatmap(corr, annot=False, cmap="coolwarm", ax=ax)
+plt.title("Correlation Heatmap")
+st.pyplot(fig)
+
+corr_pairs = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+stacked_corr = corr_pairs.stack().reset_index()
+stacked_corr.columns = ['Ticker 1', 'Ticker 2', 'Correlation']
+stacked_corr = stacked_corr.sort_values(by='Correlation', ascending=False).head(top_n)
+
+st.subheader("Top Correlation Pairs")
+st.dataframe(stacked_corr.reset_index(drop=True))
