@@ -11,65 +11,66 @@ from itertools import combinations
 
 st.title("Top Correlated Stocks & Commodities")
 
-# Input for ticker symbols
-tickers = st.text_area("Enter ticker symbols (comma-separated)")
+# Sidebar user inputs
+tickers = st.sidebar.text_input("Enter comma-separated tickers (e.g. AAPL, MSFT, GOOGL)")
 tickers = [t.strip().upper() for t in tickers.split(",") if t.strip() != ""]
 
-# Sidebar options for timeframe, lag, correlation method, and top N pairs
-timeframe = st.sidebar.selectbox("Timeframe", options=["1 Hour", "1 Day", "1 Month"], index=1)
-lag = st.sidebar.selectbox("Lagging Indicator", options=["1 Minute", "1 Hour", "1 Day"], index=1)
-
-if timeframe == "1 Hour":
-    period = "7d"
-    interval = "1h"
-elif timeframe == "1 Day":
-    period = "1mo"
-    interval = "1d"
-elif timeframe == "1 Month":
-    period = "1y"
-    interval = "1mo"
-
+period = st.sidebar.selectbox("Data Period", options=["1h", "1d", "1mo"], index=1)
 corr_method = st.sidebar.selectbox("Correlation Method", options=["pearson", "spearman"], index=0)
 top_n = st.sidebar.slider("Top N Pairs", 5, 100, 20)
 
+lag_option = st.sidebar.selectbox("Lagging Indicator", options=["None", "1 minute", "1 hour", "1 day"], index=0)
+lag_mapping = {"None": 0, "1 minute": 1, "1 hour": 60, "1 day": 1440}  # minutes
+lag_minutes = lag_mapping[lag_option]
+
 @st.cache_data
 
-def load_data(tickers, period, interval):
-    if not tickers:
-        return pd.DataFrame()
-    data = yf.download(tickers, period=period, interval=interval)
-    return data["Adj Close"] if "Adj Close" in data.columns else data
-
-data = load_data(tickers, period, interval)
-
-# Apply lag based on selection
-lag_map = {
-    "1 Minute": 1,
-    "1 Hour": 1,
-    "1 Day": 1
-}
-
-if interval == "1h" and lag == "1 Minute":
-    st.warning("1 Minute lag not applicable for 1 Hour interval data")
-elif interval == "1d" and lag == "1 Minute":
-    st.warning("1 Minute lag not applicable for 1 Day interval data")
-elif interval == "1mo" and lag in ["1 Minute", "1 Hour"]:
-    st.warning("Lag selection not applicable for 1 Month interval data")
-else:
-    lag_shift = lag_map.get(lag, 1)
-    if not data.empty:
-        shifted_data = data.shift(lag_shift)
-        corr = data.corrwith(shifted_data, axis=0, method=corr_method)
-        pairs = list(itertools.combinations(corr.index, 2))
-        corr_pairs = [(a, b, data[a].corr(shifted_data[b], method=corr_method)) for a, b in pairs if a in shifted_data and b in shifted_data]
-        corr_pairs.sort(key=lambda x: abs(x[2]), reverse=True)
-
-        top_corrs = corr_pairs[:top_n]
-        st.subheader(f"Top {top_n} Correlated Pairs with Lag ({lag})")
-        for a, b, c in top_corrs:
-            st.write(f"{a} - {b}: {c:.2f}")
+def load_data(tickers, interval):
+    data = yf.download(tickers, interval=interval, period="7d", group_by='ticker', auto_adjust=True)
+    if len(tickers) == 1:
+        data = data['Close'].to_frame(name=tickers[0])
     else:
-        st.warning("Please enter valid tickers and ensure data is available.")
+        data = pd.concat([data[ticker]['Close'].rename(ticker) for ticker in tickers if ticker in data.columns.get_level_values(0)], axis=1)
+    return data.dropna()
+
+# Determine appropriate interval based on period
+interval = {
+    "1h": "1m",
+    "1d": "5m",
+    "1mo": "1h"
+}[period]
+
+data = load_data(tickers, interval)
+
+# Ensure data is not empty
+if data.empty:
+    st.error("No data loaded. Please check ticker symbols and try again.")
+else:
+    # Apply lag shift
+    if lag_minutes > 0:
+        lag_steps = lag_minutes // {
+            "1m": 1,
+            "5m": 5,
+            "1h": 60
+        }[interval]
+        shifted_data = data.shift(lag_steps)
+        corr = data.corrwith(shifted_data, method=corr_method).to_frame(name="Correlation")
+    else:
+        corr = data.corr(method=corr_method)
+
+    if isinstance(corr, pd.DataFrame):
+        try:
+            pairs = list(itertools.combinations(corr.index, 2))
+            correlations = [
+                (a, b, corr.loc[a, b]) for a, b in pairs if a in corr.columns and b in corr.columns
+            ]
+            top_corrs = sorted(correlations, key=lambda x: abs(x[2]), reverse=True)[:top_n]
+            df_top = pd.DataFrame(top_corrs, columns=["Ticker 1", "Ticker 2", "Correlation"])
+            st.dataframe(df_top)
+        except Exception as e:
+            st.error(f"Failed to compute correlations: {e}")
+    else:
+        st.error("Correlation matrix not generated properly. Please check your data and settings.")
 
 # --- Correlation Matrix ---
 returns = data.pct_change().dropna()
