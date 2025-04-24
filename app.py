@@ -9,6 +9,8 @@ from itertools import combinations
 
 
 
+st.title("Top Correlated Stocks & Commodities")
+
 # Input for ticker symbols
 tickers = st.text_area("Enter ticker symbols (comma-separated)")
 tickers = [t.strip().upper() for t in tickers.split(",") if t.strip() != ""]
@@ -30,33 +32,44 @@ elif timeframe == "1 Month":
 corr_method = st.sidebar.selectbox("Correlation Method", options=["pearson", "spearman"], index=0)
 top_n = st.sidebar.slider("Top N Pairs", 5, 100, 20)
 
-# --- Data Loading ---
 @st.cache_data
-def load_data(tickers, period):
-    df = yf.download(tickers, period=period, group_by='ticker', auto_adjust=True)
 
-    if isinstance(df.columns, pd.MultiIndex):
-        adj_close = pd.DataFrame({
-            ticker: df[ticker]['Close']
-            for ticker in df.columns.levels[0]
-            if 'Close' in df[ticker]
-        })
+def load_data(tickers, period, interval):
+    if not tickers:
+        return pd.DataFrame()
+    data = yf.download(tickers, period=period, interval=interval)
+    return data["Adj Close"] if "Adj Close" in data.columns else data
+
+data = load_data(tickers, period, interval)
+
+# Apply lag based on selection
+lag_map = {
+    "1 Minute": 1,
+    "1 Hour": 1,
+    "1 Day": 1
+}
+
+if interval == "1h" and lag == "1 Minute":
+    st.warning("1 Minute lag not applicable for 1 Hour interval data")
+elif interval == "1d" and lag == "1 Minute":
+    st.warning("1 Minute lag not applicable for 1 Day interval data")
+elif interval == "1mo" and lag in ["1 Minute", "1 Hour"]:
+    st.warning("Lag selection not applicable for 1 Month interval data")
+else:
+    lag_shift = lag_map.get(lag, 1)
+    if not data.empty:
+        shifted_data = data.shift(lag_shift)
+        corr = data.corrwith(shifted_data, axis=0, method=corr_method)
+        pairs = list(itertools.combinations(corr.index, 2))
+        corr_pairs = [(a, b, data[a].corr(shifted_data[b], method=corr_method)) for a, b in pairs if a in shifted_data and b in shifted_data]
+        corr_pairs.sort(key=lambda x: abs(x[2]), reverse=True)
+
+        top_corrs = corr_pairs[:top_n]
+        st.subheader(f"Top {top_n} Correlated Pairs with Lag ({lag})")
+        for a, b, c in top_corrs:
+            st.write(f"{a} - {b}: {c:.2f}")
     else:
-        adj_close = df[['Close']]
-        adj_close.columns = [tickers[0]]
-
-    # Drop rows (dates) where most symbols are missing, but not columns (symbols)
-    return adj_close.dropna(thresh=len(adj_close.columns) - 2)
-
-    return adj_close.dropna(axis=1, how="any")
-
-if len(tickers) < 2:
-    st.warning("Please enter at least two tickers.")
-    st.stop()
-
-st.info("Fetching data...")
-data = load_data(tickers, period)
-st.success(f"Loaded data for {len(data.columns)} symbols.")
+        st.warning("Please enter valid tickers and ensure data is available.")
 
 # --- Correlation Matrix ---
 returns = data.pct_change().dropna()
