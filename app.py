@@ -1,15 +1,7 @@
-# app.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from itertools import combinations
-
-
-
-st.title("Top Correlated Stocks & Commodities")
+import itertools
 
 # Sidebar user inputs
 tickers = st.sidebar.text_input("Enter comma-separated tickers (e.g. AAPL, MSFT, GOOGL)")
@@ -71,27 +63,3 @@ else:
             st.error(f"Failed to compute correlations: {e}")
     else:
         st.error("Correlation matrix not generated properly. Please check your data and settings.")
-
-# --- Correlation Matrix ---
-returns = data.pct_change().dropna()
-corr = returns.corr(method=corr_method)
-
-# --- Top Correlated Pairs ---
-def top_corr_pairs(corr_matrix, n=10):
-    pairs = []
-    for i, j in combinations(corr_matrix.columns, 2):
-        value = corr_matrix.loc[i, j]
-        pairs.append((i, j, value))
-    sorted_pairs = sorted(pairs, key=lambda x: abs(x[2]), reverse=True)
-    return sorted_pairs[:n]
-
-top_pairs = top_corr_pairs(corr, top_n)
-top_df = pd.DataFrame(top_pairs, columns=["Asset 1", "Asset 2", "Correlation"])
-st.subheader(f"🔗 Top {top_n} Correlated Pairs")
-st.dataframe(top_df, use_container_width=True)
-
-# --- Heatmap ---
-st.subheader("🔥 Correlation Heatmap")
-fig, ax = plt.subplots(figsize=(12, 8))
-sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
-st.pyplot(fig)
