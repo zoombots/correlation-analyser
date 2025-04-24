@@ -52,10 +52,14 @@ sns.heatmap(corr, annot=False, cmap="coolwarm", ax=ax)
 plt.title("Correlation Heatmap")
 st.pyplot(fig)
 
-corr_pairs = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
-stacked_corr = corr_pairs.stack().reset_index()
-stacked_corr.columns = ['Ticker 1', 'Ticker 2', 'Correlation']
-stacked_corr = stacked_corr.sort_values(by='Correlation', ascending=False).head(top_n)
+# Drop rows/columns with all NaNs
+corr = corr.dropna(how='all').dropna(axis=1, how='all')
 
-st.subheader("Top Correlation Pairs")
-st.dataframe(stacked_corr.reset_index(drop=True))
+# Check if there's anything to plot
+if not corr.empty and not corr.isnull().all().all():
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(corr, annot=False, cmap="coolwarm", ax=ax)
+    st.pyplot(fig)
+else:
+    st.warning("Correlation matrix is empty or contains only NaNs. Adjust tickers or lag settings.")
+
