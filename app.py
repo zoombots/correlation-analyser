@@ -29,14 +29,23 @@ top_n = st.sidebar.slider("Top N Pairs", 5, 100, 20)
 @st.cache_data
 def load_data(tickers, period):
     df = yf.download(tickers, period=period, group_by='ticker', auto_adjust=True)
-    
-    # If multiple tickers, extract adjusted close properly
+
     if isinstance(df.columns, pd.MultiIndex):
-        adj_close = pd.DataFrame({ticker: df[ticker]['Close'] for ticker in df.columns.levels[0] if 'Close' in df[ticker]})
+        adj_close = pd.DataFrame({
+            ticker: df[ticker]['Close']
+            for ticker in df.columns.levels[0]
+            if 'Close' in df[ticker]
+        })
     else:
-        # Single ticker case
         adj_close = df[['Close']]
         adj_close.columns = [tickers[0]]
+
+    # Drop rows (dates) where most symbols are missing, but not columns (symbols)
+    return adj_close.dropna(thresh=len(adj_close.columns) - 2)
+    
+missing = set(tickers) - set(adj_close.columns)
+if missing:
+    st.warning(f"Could not load data for: {', '.join(missing)}")
 
     return adj_close.dropna(axis=1, how="any")
 
