@@ -43,10 +43,6 @@ def load_data(tickers, period):
     # Drop rows (dates) where most symbols are missing, but not columns (symbols)
     return adj_close.dropna(thresh=len(adj_close.columns) - 2)
 
-
-    # Drop rows (dates) where most symbols are missing, but not columns (symbols)
-    return adj_close.dropna(thresh=len(adj_close.columns) - 2)
-    
 missing = set(tickers) - set(adj_close.columns)
 if missing:
     st.warning(f"Could not load data for: {', '.join(missing)}")
