@@ -28,8 +28,17 @@ top_n = st.sidebar.slider("Top N Pairs", 5, 100, 20)
 # --- Data Loading ---
 @st.cache_data
 def load_data(tickers, period):
-    df = yf.download(tickers, period=period)["Adj Close"]
-    return df.dropna(axis=1, how="any")  # remove tickers with incomplete data
+    df = yf.download(tickers, period=period, group_by='ticker', auto_adjust=True)
+    
+    # If multiple tickers, extract adjusted close properly
+    if isinstance(df.columns, pd.MultiIndex):
+        adj_close = pd.DataFrame({ticker: df[ticker]['Close'] for ticker in df.columns.levels[0] if 'Close' in df[ticker]})
+    else:
+        # Single ticker case
+        adj_close = df[['Close']]
+        adj_close.columns = [tickers[0]]
+
+    return adj_close.dropna(axis=1, how="any")
 
 if len(tickers) < 2:
     st.warning("Please enter at least two tickers.")
